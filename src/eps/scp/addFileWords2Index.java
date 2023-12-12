@@ -3,7 +3,9 @@ package eps.scp;
 import java.io.*;
 import java.text.Normalizer;
 import java.util.HashSet;
+
 import java.util.concurrent.*;
+
 
 public class addFileWords2Index implements Runnable{
 
@@ -23,6 +25,7 @@ public class addFileWords2Index implements Runnable{
 
     private Semaphore semaphore;
     int fileId;
+    private static final Lock fileLock = new ReentrantLock();
 
     public addFileWords2Index(File file, int fileId, InvertedIndex inverted,Phaser phaser, Semaphore semaphore){
 
@@ -69,6 +72,7 @@ public class addFileWords2Index implements Runnable{
                 }
                 phaser.arriveAndAwaitAdvance();
 
+
                 // Eliminamos carácteres especiales de la línea del fichero.
                 line = Normalizer.normalize(line, Normalizer.Form.NFD);
                 line = line.replaceAll("[\\p{InCombiningDiacriticalMarks}]", "");
@@ -83,6 +87,7 @@ public class addFileWords2Index implements Runnable{
                     word = word.toLowerCase();
                     // Obtener entrada correspondiente en el Indice Invertido
                     ///Lockear
+
                     semaphore.acquire();
                     try{
                         HashSet<Location> locations = inverted.getHash().get(word);
@@ -96,6 +101,7 @@ public class addFileWords2Index implements Runnable{
                             inverted.getHash().put(word, locations);
                         }
                         ////UnLockear
+
                         InternalTotalWords++;   // Modificado!!
                         FileStatistics.incProcessedWords();   // Modificado!!
                         // Añadimos nueva localización en la lista de localizaciomes asocidada con ella.
@@ -106,7 +112,10 @@ public class addFileWords2Index implements Runnable{
                             FileStatistics.incProcessedLocations();
                         }
                     } finally {
+
                         semaphore.release();
+
+
                     }
                 }
                 if (Indexing.Verbose) System.out.println();
@@ -121,6 +130,7 @@ public class addFileWords2Index implements Runnable{
             throw new RuntimeException(e);
         }
         phaser.arriveAndAwaitAdvance();
+
         try{
             semaphore.acquire();
             FileStatistics.incProcessedFiles();
@@ -139,6 +149,7 @@ public class addFileWords2Index implements Runnable{
         }finally {
             semaphore.release();
         }
+
         phaser.arriveAndDeregister();
         ///Unlockear
     }
