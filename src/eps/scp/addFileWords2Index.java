@@ -4,6 +4,8 @@ import java.io.*;
 import java.text.Normalizer;
 import java.util.HashSet;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class addFileWords2Index implements Runnable{
 
@@ -21,6 +23,7 @@ public class addFileWords2Index implements Runnable{
     long InternalTotalWords= 0;
     private Phaser phaser;
     int fileId;
+    private static final Lock fileLock = new ReentrantLock();
 
     public addFileWords2Index(File file, int fileId, InvertedIndex inverted,Phaser phaser){
 
@@ -57,7 +60,7 @@ public class addFileWords2Index implements Runnable{
                 Location newLocation = new Location(fileId, lineNumber);
                 ///Lockear
                 inverted.addIndexFilesLine(newLocation, line);
-                ////Unlockear
+                ///Unlockear
                 // Eliminamos carácteres especiales de la línea del fichero.
                 line = Normalizer.normalize(line, Normalizer.Form.NFD);
                 line = line.replaceAll("[\\p{InCombiningDiacriticalMarks}]", "");
@@ -72,25 +75,31 @@ public class addFileWords2Index implements Runnable{
                     word = word.toLowerCase();
                     // Obtener entrada correspondiente en el Indice Invertido
                     ///Lockear
-                    HashSet<Location> locations = inverted.getHash().get(word);
-                    if (locations == null)
-                    {   // Si no existe esa palabra en el indice invertido, creamos una lista vacía de Localizaciones y la añadimos al Indice
-                        locations = new HashSet<Location>();
-                        if (!inverted.getHash().containsKey(word)) {
-                            FileStatistics.incKeysFound();
-                            InternalTotalKeysFound++; // Modificado!!
-                        }
-                        inverted.getHash().put(word, locations);
-                    }
+                    fileLock.lock();
+                    try{
+                       HashSet<Location> locations = inverted.getHash().get(word);
+                       if (locations == null)
+                       {   // Si no existe esa palabra en el indice invertido, creamos una lista vacía de Localizaciones y la añadimos al Indice
+                           locations = new HashSet<Location>();
+                           if (!inverted.getHash().containsKey(word)) {
+                               FileStatistics.incKeysFound();
+                               InternalTotalKeysFound++; // Modificado!!
+                           }
+                           inverted.getHash().put(word, locations);
+                       }
+
                     ////UnLockear
-                    InternalTotalWords++;   // Modificado!!
-                    FileStatistics.incProcessedWords();   // Modificado!!
-                    // Añadimos nueva localización en la lista de localizaciomes asocidada con ella.
-                    int oldLocSize = locations.size();
-                    locations.add(newLocation);
-                    if (locations.size()>oldLocSize) {
-                        InternalTotalLocations++;
-                        FileStatistics.incProcessedLocations();
+                        InternalTotalWords++;   // Modificado!!
+                        FileStatistics.incProcessedWords();   // Modificado!!
+                        // Añadimos nueva localización en la lista de localizaciomes asocidada con ella.
+                        int oldLocSize = locations.size();
+                        locations.add(newLocation);
+                        if (locations.size()>oldLocSize) {
+                            InternalTotalLocations++;
+                            FileStatistics.incProcessedLocations();
+                        }
+                    } finally {
+                        fileLock.unlock();
                     }
                 }
                 if (Indexing.Verbose) System.out.println();
@@ -103,9 +112,12 @@ public class addFileWords2Index implements Runnable{
             e.printStackTrace();
         }
         phaser.arriveAndAwaitAdvance();
+
+
         FileStatistics.incProcessedFiles();
         FileStatistics.decProcessingFiles();
         //Fase 2
+        ///lockear
         inverted.setMostPopularWord(FileStatistics);
         FileStatistics.print(file.getName());
         InvertedIndex.GlobalStatistics.addStatistics(FileStatistics);
@@ -114,6 +126,7 @@ public class addFileWords2Index implements Runnable{
         inverted.setTotalLocations(inverted.getTotalLocations()+InternalTotalLocations);
         inverted.setTotalWords(inverted.getTotalWords()+InternalTotalWords);
         inverted.setTotalProcessedFiles(inverted.getTotalProcessedFiles()+InternalTotalProcessedFiles);
+
         phaser.arriveAndDeregister();
         ///Unlockear
     }
