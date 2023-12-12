@@ -198,8 +198,8 @@ public class InvertedIndex
     public void buidIndexFiles()
     {
         int fileId=0;
-        int Num_threads = FilesList.toArray().length;
-        Phaser phaser = new Phaser(Num_threads);
+
+        Phaser phaser = new Phaser();
         Semaphore semaphore = new Semaphore(1);
 
         List<Thread> threads = new ArrayList<>();
@@ -214,8 +214,14 @@ public class InvertedIndex
 
             Thread thread = Thread.startVirtualThread(task);
 
-            addFileWords2Index(fileId, file);
+
         }
+        phaser.register();
+        //fase1
+        phaser.arriveAndAwaitAdvance();
+        phaser.arriveAndAwaitAdvance();
+        phaser.arriveAndAwaitAdvance();
+
 
         String maxWord = Collections.max(Hash.entrySet(), (entry1, entry2) -> entry1.getValue().size() - entry2.getValue().size()).getKey();
         GlobalStatistics.setMostPopularWord(maxWord);

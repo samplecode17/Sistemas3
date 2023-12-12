@@ -25,7 +25,6 @@ public class addFileWords2Index implements Runnable{
 
     private Semaphore semaphore;
     int fileId;
-    private static final Lock fileLock = new ReentrantLock();
 
     public addFileWords2Index(File file, int fileId, InvertedIndex inverted,Phaser phaser, Semaphore semaphore){
 
@@ -52,7 +51,6 @@ public class addFileWords2Index implements Runnable{
         // Crear buffer reader para leer el fichero a procesar.
         try(BufferedReader br = new BufferedReader(new FileReader(file)))
         {
-            phaser.arriveAndAwaitAdvance();
             String line;
             int lineNumber = 0;  // inicializa contador de líneas a 0.
             while( (line = br.readLine()) !=null)   // Leemos siguiente línea de texto del fichero.
@@ -70,7 +68,6 @@ public class addFileWords2Index implements Runnable{
                     // Liberar el semáforo
                     semaphore.release();
                 }
-                phaser.arriveAndAwaitAdvance();
 
 
                 // Eliminamos carácteres especiales de la línea del fichero.
@@ -133,22 +130,34 @@ public class addFileWords2Index implements Runnable{
 
         try{
             semaphore.acquire();
-            FileStatistics.incProcessedFiles();
-            FileStatistics.decProcessingFiles();
+
             //Fase 2
-            inverted.setMostPopularWord(FileStatistics);
-            FileStatistics.print(file.getName());
-            inverted.getGlobalStatistics().addStatistics(FileStatistics);
             inverted.setTotalKeysFound(inverted.getTotalKeysFound()+InternalTotalKeysFound);
             inverted.setTotalLines(inverted.getTotalLines()+InternalTotalLines);
             inverted.setTotalLocations(inverted.getTotalLocations()+InternalTotalLocations);
             inverted.setTotalWords(inverted.getTotalWords()+InternalTotalWords);
             inverted.setTotalProcessedFiles(inverted.getTotalProcessedFiles()+InternalTotalProcessedFiles);
+
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }finally {
             semaphore.release();
         }
+        phaser.arriveAndAwaitAdvance();
+        FileStatistics.incProcessedFiles();
+        FileStatistics.decProcessingFiles();
+        try {
+            semaphore.acquire();
+
+            inverted.setMostPopularWord(FileStatistics);
+            inverted.getGlobalStatistics().addStatistics(FileStatistics);
+
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }finally {
+            semaphore.release();
+        }
+        FileStatistics.print(file.getName());
 
         phaser.arriveAndDeregister();
         ///Unlockear
