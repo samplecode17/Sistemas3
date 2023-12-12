@@ -121,17 +121,24 @@ public class addFileWords2Index implements Runnable{
             throw new RuntimeException(e);
         }
         phaser.arriveAndAwaitAdvance();
-        FileStatistics.incProcessedFiles();
-        FileStatistics.decProcessingFiles();
-        //Fase 2
-        inverted.setMostPopularWord(FileStatistics);
-        FileStatistics.print(file.getName());
-        inverted.getGlobalStatistics().addStatistics(FileStatistics);
-        inverted.setTotalKeysFound(inverted.getTotalKeysFound()+InternalTotalKeysFound);
-        inverted.setTotalLines(inverted.getTotalLines()+InternalTotalLines);
-        inverted.setTotalLocations(inverted.getTotalLocations()+InternalTotalLocations);
-        inverted.setTotalWords(inverted.getTotalWords()+InternalTotalWords);
-        inverted.setTotalProcessedFiles(inverted.getTotalProcessedFiles()+InternalTotalProcessedFiles);
+        try{
+            semaphore.acquire();
+            FileStatistics.incProcessedFiles();
+            FileStatistics.decProcessingFiles();
+            //Fase 2
+            inverted.setMostPopularWord(FileStatistics);
+            FileStatistics.print(file.getName());
+            inverted.getGlobalStatistics().addStatistics(FileStatistics);
+            inverted.setTotalKeysFound(inverted.getTotalKeysFound()+InternalTotalKeysFound);
+            inverted.setTotalLines(inverted.getTotalLines()+InternalTotalLines);
+            inverted.setTotalLocations(inverted.getTotalLocations()+InternalTotalLocations);
+            inverted.setTotalWords(inverted.getTotalWords()+InternalTotalWords);
+            inverted.setTotalProcessedFiles(inverted.getTotalProcessedFiles()+InternalTotalProcessedFiles);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }finally {
+            semaphore.release();
+        }
         phaser.arriveAndDeregister();
         ///Unlockear
     }
