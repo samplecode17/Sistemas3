@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Phaser;
+import java.util.concurrent.Semaphore;
 
 import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.io.FileUtils;
@@ -49,8 +51,12 @@ public class InvertedIndex
     // Hash Map que implementa el Índice Invertido: key=word, value=Locations(Listof(file,line)).
     private Map<String, HashSet <Location>> Hash =  new TreeMap<String, HashSet <Location>>();
 
+    public Statistics getGlobalStatistics() {
+        return GlobalStatistics;
+    }
+
     // Estadisticas para verificar la correcta contrucción del indice invertido.
-    static final Statistics GlobalStatistics = new Statistics("=");
+    private Statistics GlobalStatistics = new Statistics("=");
     private long TotalLocations = 0;
     private long TotalWords = 0;
 
@@ -192,12 +198,22 @@ public class InvertedIndex
     public void buidIndexFiles()
     {
         int fileId=0;
+        int Num_threads = FilesList.toArray().length;
+        Phaser phaser = new Phaser(Num_threads);
+        Semaphore semaphore = new Semaphore(1);
+
+        List<Thread> threads = new ArrayList<>();
 
         // Procesar cada uno de los ficheros de texto.
         for (File file : FilesList)
         {
             fileId++;                                   // Incrementar Identificador fichero
-            Files.put(fileId, file.getAbsolutePath());  // Añadir entra en el hash de traducción de Id a ruta+nombre fichero
+            Files.put(fileId, file.getAbsolutePath());// Añadir entra en el hash de traducción de Id a ruta+nombre fichero
+
+            addFileWords2Index task = new addFileWords2Index(file,fileId,this,phaser,semaphore);
+
+            Thread thread = Thread.startVirtualThread(task);
+
             addFileWords2Index(fileId, file);
         }
 
