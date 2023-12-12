@@ -3,7 +3,7 @@ package eps.scp;
 import java.io.*;
 import java.text.Normalizer;
 import java.util.HashSet;
-import java.util.concurrent.Phaser;
+import java.util.concurrent.*;
 
 public class addFileWords2Index implements Runnable{
 
@@ -19,16 +19,19 @@ public class addFileWords2Index implements Runnable{
     long InternalTotalLocations = 0;
 
     long InternalTotalWords= 0;
-    private Phaser phaser;
+    private final Phaser phaser;
+
+    private Semaphore semaphore;
     int fileId;
 
-    public addFileWords2Index(File file, int fileId, InvertedIndex inverted,Phaser phaser){
+    public addFileWords2Index(File file, int fileId, InvertedIndex inverted,Phaser phaser, Semaphore semaphore){
 
         this.file = file;
         this.fileId = fileId;
         this.inverted = inverted;
         this.phaser = phaser;
         this.phaser.register();
+        this.semaphore = semaphore;
 
     }
 
@@ -46,18 +49,26 @@ public class addFileWords2Index implements Runnable{
         // Crear buffer reader para leer el fichero a procesar.
         try(BufferedReader br = new BufferedReader(new FileReader(file)))
         {
+            phaser.arriveAndAwaitAdvance();
             String line;
             int lineNumber = 0;  // inicializa contador de líneas a 0.
             while( (line = br.readLine()) !=null)   // Leemos siguiente línea de texto del fichero.
             {
+
                 lineNumber++;
                 InternalTotalLines++;
                 FileStatistics.incProcessedLines();
                 if (Indexing.Verbose) System.out.printf("Procesando linea %d fichero %d: ",lineNumber,fileId);
                 Location newLocation = new Location(fileId, lineNumber);
-                ///Lockear
-                inverted.addIndexFilesLine(newLocation, line);
-                ////Unlockear
+                semaphore.acquire();
+                try{
+                    inverted.addIndexFilesLine(newLocation, line);
+                } finally {
+                    // Liberar el semáforo
+                    semaphore.release();
+                }
+                phaser.arriveAndAwaitAdvance();
+
                 // Eliminamos carácteres especiales de la línea del fichero.
                 line = Normalizer.normalize(line, Normalizer.Form.NFD);
                 line = line.replaceAll("[\\p{InCombiningDiacriticalMarks}]", "");
@@ -72,25 +83,30 @@ public class addFileWords2Index implements Runnable{
                     word = word.toLowerCase();
                     // Obtener entrada correspondiente en el Indice Invertido
                     ///Lockear
-                    HashSet<Location> locations = inverted.getHash().get(word);
-                    if (locations == null)
-                    {   // Si no existe esa palabra en el indice invertido, creamos una lista vacía de Localizaciones y la añadimos al Indice
-                        locations = new HashSet<Location>();
-                        if (!inverted.getHash().containsKey(word)) {
-                            FileStatistics.incKeysFound();
-                            InternalTotalKeysFound++; // Modificado!!
+                    semaphore.acquire();
+                    try{
+                        HashSet<Location> locations = inverted.getHash().get(word);
+                        if (locations == null)
+                        {   // Si no existe esa palabra en el indice invertido, creamos una lista vacía de Localizaciones y la añadimos al Indice
+                            locations = new HashSet<Location>();
+                            if (!inverted.getHash().containsKey(word)) {
+                                FileStatistics.incKeysFound();
+                                InternalTotalKeysFound++; // Modificado!!
+                            }
+                            inverted.getHash().put(word, locations);
                         }
-                        inverted.getHash().put(word, locations);
-                    }
-                    ////UnLockear
-                    InternalTotalWords++;   // Modificado!!
-                    FileStatistics.incProcessedWords();   // Modificado!!
-                    // Añadimos nueva localización en la lista de localizaciomes asocidada con ella.
-                    int oldLocSize = locations.size();
-                    locations.add(newLocation);
-                    if (locations.size()>oldLocSize) {
-                        InternalTotalLocations++;
-                        FileStatistics.incProcessedLocations();
+                        ////UnLockear
+                        InternalTotalWords++;   // Modificado!!
+                        FileStatistics.incProcessedWords();   // Modificado!!
+                        // Añadimos nueva localización en la lista de localizaciomes asocidada con ella.
+                        int oldLocSize = locations.size();
+                        locations.add(newLocation);
+                        if (locations.size()>oldLocSize) {
+                            InternalTotalLocations++;
+                            FileStatistics.incProcessedLocations();
+                        }
+                    } finally {
+                        semaphore.release();
                     }
                 }
                 if (Indexing.Verbose) System.out.println();
@@ -101,6 +117,8 @@ public class addFileWords2Index implements Runnable{
         } catch (IOException e) {
             System.err.printf("Error lectura fichero %s.\n",file.getAbsolutePath());
             e.printStackTrace();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
         phaser.arriveAndAwaitAdvance();
         FileStatistics.incProcessedFiles();
@@ -108,7 +126,7 @@ public class addFileWords2Index implements Runnable{
         //Fase 2
         inverted.setMostPopularWord(FileStatistics);
         FileStatistics.print(file.getName());
-        InvertedIndex.GlobalStatistics.addStatistics(FileStatistics);
+        inverted.getGlobalStatistics().addStatistics(FileStatistics);
         inverted.setTotalKeysFound(inverted.getTotalKeysFound()+InternalTotalKeysFound);
         inverted.setTotalLines(inverted.getTotalLines()+InternalTotalLines);
         inverted.setTotalLocations(inverted.getTotalLocations()+InternalTotalLocations);

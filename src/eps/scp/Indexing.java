@@ -26,6 +26,7 @@ public class Indexing
 
         Instant start = Instant.now();
 
+
         hash.buidIndex();
         if (false) hash.printIndex();
         hash.saveIndex();
