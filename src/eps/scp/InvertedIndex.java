@@ -23,6 +23,43 @@ public class InvertedIndex
     public final String ANSI_BLUE = "\u001B[34m";
     public final String ANSI_GREEN_YELLOW_UNDER = "\u001B[32;40;4m";
     public final String ANSI_RESET = "\u001B[0m";
+
+    public int getDIndexMaxNumberOfFiles() {
+        return DIndexMaxNumberOfFiles;
+    }
+
+    public int getDIndexMinNumberOfFiles() {
+        return DIndexMinNumberOfFiles;
+    }
+
+    public int getDKeysByFileIndex() {
+        return DKeysByFileIndex;
+    }
+
+    public String getDIndexFilePrefix() {
+        return DIndexFilePrefix;
+    }
+
+    public String getDFileLinesName() {
+        return DFileLinesName;
+    }
+
+    public String getDFilesIdsName() {
+        return DFilesIdsName;
+    }
+
+    public String getDDefaultIndexDir() {
+        return DDefaultIndexDir;
+    }
+
+    public float getDMatchingPercentage() {
+        return DMatchingPercentage;
+    }
+
+    public float getDNearlyMatchingPercentage() {
+        return DNearlyMatchingPercentage;
+    }
+
     private final int DIndexMaxNumberOfFiles = 200;   // Número máximo de ficheros para salvar el índice invertido.
     private final int DIndexMinNumberOfFiles = 2;     // Número mínimo de ficheros para salvar el índice invertido.
     private final int DKeysByFileIndex = 1000;
