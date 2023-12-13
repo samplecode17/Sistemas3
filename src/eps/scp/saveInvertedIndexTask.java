@@ -26,11 +26,21 @@ public class saveInvertedIndexTask implements Runnable{
     private int numberOfFiles, remainingFiles;
     private long remainingKeys=0;
 
-    private String key="";
+    private CyclicBarrier  main_barrier;
 
-    public saveInvertedIndexTask(InvertedIndex inverted, String outputDirectory){
+    private String key="";
+    private static Lock lock = new ReentrantLock();
+
+    public Iterator<String> getKeyIterator() {
+        return keyIterator;
+    }
+
+    private Iterator<String> keyIterator;
+
+    public saveInvertedIndexTask(InvertedIndex inverted, String outputDirectory, CyclicBarrier  main_barrier){
         this.inverted = inverted;
         this.outputDirectory = outputDirectory;
+        this.main_barrier=main_barrier;
     }
 
     @Override
@@ -47,44 +57,44 @@ public class saveInvertedIndexTask implements Runnable{
         if (numberOfFiles<inverted.getDIndexMinNumberOfFiles())
             numberOfFiles = inverted.getDIndexMinNumberOfFiles();
 
-        Iterator keyIterator = keySet.iterator();
+        keyIterator = keySet.iterator();
         remainingKeys =  keySet.size();
         remainingFiles = numberOfFiles;
 
 
-        List threads = new ArrayList<>();
-        Lock lock = new ReentrantLock();
+        List<Thread> threads = new ArrayList<>();
         CyclicBarrier barrier = new CyclicBarrier(numberOfFiles);
+
 
 
         // Bucle para recorrer los ficheros de indice a crear.
         for (int f=1;f<=numberOfFiles;f++)
         {
             int finalF = f;
+
             Thread thread = Thread.startVirtualThread(()->{
                 try {
-                    long keysByFile = 0;
-                    File KeyFile = new File(outputDirectory +"/"+ inverted.getDIndexFilePrefix() + String.format("%03d", finalF));
-                    FileWriter fw = new FileWriter(KeyFile);
-                    BufferedWriter bw = new BufferedWriter(fw);
-                    // Calculamos el número de claves a guardar en este fichero.
+                    lock.lock();
+                    try {
 
-                    keysByFile =  remainingKeys / remainingFiles;
-                    lock.lock();
-                    remainingKeys -= keysByFile;
-                    lock.unlock();
-                    // Recorremos las claves correspondientes a este fichero.
-                    lock.lock();
-                    while (keyIterator.hasNext() && keysByFile>0) {
-                        key = (String) keyIterator.next();
-                        inverted.saveIndexKey(key,bw);  // Salvamos la clave al fichero.
-                        keysByFile--;
+                        long keysByFile = 0;
+                        File keyFile = new File(outputDirectory + "/" + inverted.getDIndexFilePrefix() + String.format("%03d", finalF));
+                        FileWriter fw = new FileWriter(keyFile);
+                        BufferedWriter bw = new BufferedWriter(fw);
+                        keysByFile = remainingKeys / remainingFiles;
+
+                        remainingKeys -= keysByFile;
+
+                        // Recorremos las claves correspondientes a este fichero.
+                        keyIterator = keySet.iterator();
+                        while (keyIterator.hasNext() && keysByFile > 0) {
+                            key = keyIterator.next();
+                            inverted.saveIndexKey(key, bw); // Salvamos la clave al fichero.
+                            keysByFile--;
+                        }
+                    } finally {
+                        lock.unlock(); // Ensure the lock is always released
                     }
-                    lock.unlock();
-                    bw.close(); // Cerramos el fichero.
-                    lock.lock();
-                    remainingFiles--;
-                    lock.unlock();
                 } catch (IOException e) {
                     System.err.println("Error creating Index file " + outputDirectory + "/IndexFile" + finalF);
                     e.printStackTrace();
@@ -97,16 +107,19 @@ public class saveInvertedIndexTask implements Runnable{
                 } catch (BrokenBarrierException e) {
                     throw new RuntimeException(e);
                 }
-
             });
+            threads.add(thread);
 
         }
+
+
         try {
             barrier.await();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (BrokenBarrierException e) {
+            main_barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
             throw new RuntimeException(e);
         }
+
+
     }
 }
