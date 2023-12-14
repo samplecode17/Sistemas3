@@ -8,9 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Phaser;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import org.apache.commons.io.FileUtils;
@@ -395,7 +393,16 @@ public class InvertedIndex
         Instant start = Instant.now();
 
         resetDirectory(indexDirectory);
-        saveInvertedIndex(indexDirectory);
+        CyclicBarrier barrier = new CyclicBarrier(1);
+        saveInvertedIndexTask task = new saveInvertedIndexTask(this,indexDirectory,barrier);
+        Thread.startVirtualThread(task);
+        try {
+            barrier.await();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (BrokenBarrierException e) {
+            throw new RuntimeException(e);
+        }
         saveFilesIds(indexDirectory);
         saveFilesLines(indexDirectory);
 
@@ -456,6 +463,7 @@ public class InvertedIndex
                     keysByFile--;
                 }
                 bw.close(); // Cerramos el fichero.
+
                 remainingFiles--;
             } catch (IOException e) {
                 System.err.println("Error creating Index file " + outputDirectory + "/IndexFile" + f);
