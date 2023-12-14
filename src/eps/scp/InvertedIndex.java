@@ -377,6 +377,12 @@ public class InvertedIndex
         }
     }
 
+    public void  cancelAllThreads(List<Thread> threads){
+        for(Thread thread: threads){
+            thread.interrupt();
+        }
+    }
+
 
     public void saveIndex()
     {
@@ -393,14 +399,12 @@ public class InvertedIndex
         Instant start = Instant.now();
 
         resetDirectory(indexDirectory);
-        CyclicBarrier barrier = new CyclicBarrier(1);
+        CyclicBarrier barrier = new CyclicBarrier(2);
         saveInvertedIndexTask task = new saveInvertedIndexTask(this,indexDirectory,barrier);
         Thread.startVirtualThread(task);
         try {
             barrier.await();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (BrokenBarrierException e) {
+        } catch (InterruptedException | BrokenBarrierException e) {
             throw new RuntimeException(e);
         }
         saveFilesIds(indexDirectory);

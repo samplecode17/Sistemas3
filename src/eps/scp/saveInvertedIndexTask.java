@@ -9,8 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class saveInvertedIndexTask implements Runnable{
@@ -27,7 +25,7 @@ public class saveInvertedIndexTask implements Runnable{
     private CyclicBarrier  main_barrier;
 
     private String key="";
-    private static Lock lock = new ReentrantLock();
+    private static ReentrantLock lock = new ReentrantLock();
 
 
     private Iterator<String> keyIterator;
@@ -58,74 +56,61 @@ public class saveInvertedIndexTask implements Runnable{
 
 
         List<Thread> threads = new ArrayList<>();
-        CyclicBarrier barrier = new CyclicBarrier(numberOfFiles);
-        CyclicBarrier mid_barrier = new CyclicBarrier(numberOfFiles);
-
-
-
-
-
-
+        CyclicBarrier barrier = new CyclicBarrier(numberOfFiles+1);
 
         // Bucle para recorrer los ficheros de indice a crear.
         for (int f=1;f<=numberOfFiles;f++) {
             int finalF = f;
 
             Thread thread = Thread.startVirtualThread(() -> {
-
-
                 try {
 
                     long keysByFile = 0;
                     File keyFile = new File(outputDirectory + "/" + inverted.getDIndexFilePrefix() + String.format("%03d", finalF));
                     FileWriter fw = new FileWriter(keyFile);
                     BufferedWriter bw = new BufferedWriter(fw);
-                    keysByFile = remainingKeys / remainingFiles;
-
                     lock.lock();
                     try{
+                        keysByFile = remainingKeys / remainingFiles;
                         remainingKeys -= keysByFile;
-                    }finally {
-                        lock.unlock();
-                    }
-                    try {
-                        mid_barrier.await();
-                    } catch (InterruptedException | BrokenBarrierException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    // Recorremos las claves correspondientes a este fichero.
-                    while (keyIterator.hasNext() && keysByFile > 0) {
-                        lock.lock();
-                        try {
-                            key = keyIterator.next();
-                            inverted.saveIndexKey(key, bw); // Salvamos la clave al fichero.
-
-                        } finally {
-                            lock.unlock();
-                        }
-                        keysByFile--;
-                    }
-
-                    lock.lock();
-                    bw.close(); // Cerramos el fichero.
-                    try{
-
                         remainingFiles--;
                     }finally {
                         lock.unlock();
                     }
 
-                    try {
-                        barrier.await();
-                    } catch (InterruptedException | BrokenBarrierException e) {
-                        throw new RuntimeException(e);
+                    while (keyIterator.hasNext() && keysByFile > 0) {
+                        lock.lock();
+                        try{
+                            key = keyIterator.next();
+                            inverted.saveIndexKey(key, bw); // Salvamos la clave al fichero.
+                            keysByFile--;
+
+                        }finally {
+                            lock.unlock();
+                        }
+
                     }
+
+
+                    bw.close(); // Cerramos el fichero.
+                    lock.lock();
+                    try{
+
+                    }finally {
+                        lock.unlock();
+                    }
+
+
 
                 } catch (IOException e) {
                     System.err.println("Error creating Index file " + outputDirectory + "/IndexFile" + finalF);
                     e.printStackTrace();
                     System.exit(-1);
+                }
+                try {
+                    barrier.await();
+                } catch (InterruptedException | BrokenBarrierException e) {
+                    throw new RuntimeException(e);
                 }
 
             });
@@ -136,10 +121,11 @@ public class saveInvertedIndexTask implements Runnable{
 
 
         try {
-            mid_barrier.await();
+
             barrier.await();
             main_barrier.await();
         } catch (InterruptedException | BrokenBarrierException e) {
+            inverted.cancelAllThreads(threads);
             throw new RuntimeException(e);
         }
 
